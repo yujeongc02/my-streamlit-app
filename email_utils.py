@@ -1,28 +1,53 @@
-"""SMTP email sending. No messages are sent on import."""
+# (출처: 6 - 미션 1. 이메일 발송 / 6 - 미션 7. 도구 사용)
 import os
 import smtplib
-from email.message import EmailMessage
-from email.utils import parseaddr
-
+from email.mime.text import MIMEText
 
 def send_email(to: str, subject: str, body: str) -> dict:
+    """
+    Gmail SMTP를 이용해 이메일을 전송합니다.
+    """
     sender = os.getenv("GMAIL_ADDRESS")
     password = os.getenv("GMAIL_APP_PASSWORD")
-    address = parseaddr(to)[1]
+
     if not sender or not password:
-        return {"status": "failed", "error": "GMAIL_ADDRESS 또는 GMAIL_APP_PASSWORD 설정이 없습니다."}
-    if not address or "@" not in address or address != to.strip():
-        return {"status": "failed", "error": "수신자 이메일 주소를 확인해 주세요."}
-    msg = EmailMessage()
-    msg.set_content(body)
+        return {"status": "failed", "error": "GMAIL 설정 정보(계정/앱비밀번호)가 누락되었습니다."}
+
+    msg = MIMEText(body)
     msg["Subject"] = subject
     msg["From"] = sender
-    msg["To"] = address
+    msg["To"] = to
+
     try:
-        with smtplib.SMTP("smtp.gmail.com", 587, timeout=20) as smtp:
-            smtp.starttls()
-            smtp.login(sender, password)
-            smtp.send_message(msg)
+        with smtplib.SMTP("smtp.gmail.com", 587) as s:
+            s.starttls()
+            s.login(sender, password)
+            s.sendmail(sender, to, msg.as_string())
         return {"status": "success"}
-    except Exception as exc:
-        return {"status": "failed", "error": str(exc)}
+    except Exception as e:
+        return {"status": "failed", "error": str(e)}
+
+# OpenAI Function Calling에 전달할 도구 명세 (출처: 6 - 미션 7)
+EMAIL_TOOLS = [
+    {
+        "type": "function",
+        "function": {
+            "name": "send_email",
+            "description": "사용자가 요약이나 회의 내용을 이메일로 전송해 달라고 명시적으로 요구할 때 호출합니다.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "subject": {
+                        "type": "string",
+                        "description": "이메일 제목"
+                    },
+                    "body": {
+                        "type": "string",
+                        "description": "이메일 본문 내용"
+                    }
+                },
+                "required": ["subject", "body"]
+            }
+        }
+    }
+]
