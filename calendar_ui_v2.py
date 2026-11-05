@@ -81,7 +81,7 @@ def _recommended(title):
 
 
 def render_calendar():
-    st.subheader('📅 일정 캘린더')
+    st.subheader('🌈 나의 일정 캘린더')
     year,month=st.session_state.calendar_year,st.session_state.calendar_month
     a,b,c,d=st.columns([1,3,1,2])
     if a.button('◀',key='prev_month'):
@@ -99,27 +99,33 @@ def render_calendar():
 
     # 날짜 버튼은 숫자만 보이고, 그 아래 일정은 부드러운 배경의 띠로 표시합니다.
     st.markdown('''<style>
+      .st-key-able_calendar_grid {background:transparent;padding:3px 0 12px;}
+      .st-key-able_calendar_grid [data-testid="stColumn"] {
+          background:rgba(255,255,255,.96);border:1px solid #e1efed;
+          border-radius:12px;padding:5px 4px;min-width:0;
+          box-shadow:0 3px 11px rgba(18,91,92,.035);
+      }
       .st-key-able_calendar_grid .stButton > button {
           border: 0 !important; border-radius: 0 !important;
           box-shadow: none !important; background: transparent !important;
-          padding: .12rem .35rem !important; min-height: 1.7rem !important;
-          font-weight: 650; text-align: left; justify-content: flex-start;
+          padding: .12rem .4rem !important; min-height: 1.6rem !important;
+          font-weight: 750;color:#285a60;text-align:left;justify-content:flex-start;
       }
       .st-key-able_calendar_grid .stButton > button:hover {
-          color: #2563eb !important; background: #f4f7fb !important;
+          color: #e7803c !important; background: #fff3e8 !important;
       }
-      .able-calendar-cell { min-height: 78px; padding: 1px 2px 6px; }
+      .able-calendar-cell { min-height: 85px; padding: 2px 2px 5px; }
       .able-calendar-band {
-          border-radius: 3px; margin: 3px 0; padding: 3px 5px;
+          border-radius: 5px; margin: 4px 0; padding: 5px 6px;
           white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-          font-size: .70rem; line-height: 1.2; box-sizing: border-box;
+          font-size: .70rem; line-height: 1.15; box-sizing: border-box;
       }
       .able-calendar-extra {font-size:.68rem;color:#64748b;}
     </style>''',unsafe_allow_html=True)
 
     with st.container(key='able_calendar_grid'):
         for col,wd in zip(st.columns(7,gap='small'),['월','화','수','목','금','토','일']):
-            col.markdown(f'**{wd}**')
+            col.markdown(f'<div style="text-align:center;color:{"#dd7771" if wd=="일" else "#3db6ac" if wd=="토" else "#637c85"};font-weight:750;padding:4px">{wd}</div>',unsafe_allow_html=True)
         for week in calendar.monthcalendar(year,month):
             for col,day in zip(st.columns(7,gap='small'),week):
                 with col:
@@ -138,6 +144,8 @@ def render_calendar():
                         bands.append(f'<div class="able-calendar-band" style="background:{bg};color:{fg}" title="{label}">{label}</div>')
                     if len(matches)>3:
                         bands.append(f'<div class="able-calendar-extra">외 {len(matches)-3}개</div>')
+                    if st.session_state.selected_date==current:
+                        bands.insert(0,'<div style="height:3px;background:#ffad70;border-radius:9px;margin:0 2px 5px"></div>')
                     st.markdown('<div class="able-calendar-cell">'+''.join(bands)+'</div>',unsafe_allow_html=True)
 
 
@@ -229,9 +237,9 @@ def render_todos():
                 st.error(f'음성 할 일 추가 실패: {exc}')
     total=len(st.session_state.todos)
     for item in list(st.session_state.todos):
-        a,b=st.columns([5,1])
+        a,b=st.columns([4,1.4])
         item['done']=a.checkbox(item['task'],value=item['done'],key=f'todo_{item["id"]}')
-        if b.button('삭제',key=f'del_todo_{item["id"]}'):
+        if b.button('🗑️',key=f'del_todo_{item["id"]}',help='할 일 삭제',use_container_width=True):
             st.session_state.todos.remove(item)
             st.rerun()
     lines=[('[완료]' if x['done'] else '[미완료]')+' '+x['task'] for x in st.session_state.todos]
