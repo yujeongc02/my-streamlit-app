@@ -10,16 +10,28 @@ from assistant import ASSISTANT_BUILD, DEFAULT_SYS_ROLE
 from audio_utils import text_to_speech
 from calendar_ui_v2 import render_calendar, render_details, render_todos
 from command_service import MissingInputError, run_command
-from meeting_planner import analyze_meeting
+from meeting_planner import analyze_meeting, add_schedule
 from meeting_utils import update_meeting_file
 
-st.set_page_config(page_title="AI 개인비서 에이블",page_icon="🤖",layout="wide")
+st.set_page_config(page_title="ABLE | 에이블 업무 비서",page_icon="☁️",layout="wide",initial_sidebar_state="expanded")
 initialize_state()
+
+st.markdown('''<style>
+  .stApp {background:linear-gradient(165deg,#f6fcfc 0%,#ffffff 44%,#fffaf6 100%);}
+  [data-testid="stSidebar"] {background:linear-gradient(180deg,#e9faf7 0%,#f6f9fc 90%);}
+  .st-key-able_hero {border:1px solid #dcefed;background:linear-gradient(110deg,#e4faf5,#f8fbff 58%,#fff3e6);
+      border-radius:22px;padding:14px 22px;margin-bottom:14px;}
+  .st-key-able_hero h1 {font-weight:800;letter-spacing:-.04em;color:#1d4547;}
+  .stButton > button[kind="primary"] {background:#08b9ad;border-color:#08b9ad;}
+  .stButton > button {border-radius:11px;}
+  [data-testid="stMetric"] {background:#fff;border:1px solid #e5efef;border-radius:14px;padding:12px;}
+</style>''',unsafe_allow_html=True)
 
 # 호준님 파일의 사이드바·멀티턴 처리 방식을 유지합니다.
 with st.sidebar:
-    st.header("🤖 에이블")
-    st.caption(f"메일 처리 버전: {ASSISTANT_BUILD}")
+    st.image('able_mascot.webp',width=180)
+    st.header("☁️ 에이블")
+    st.caption('언제든 곁에서 도와주는 AI 업무 비서')
     st.subheader("📥 회의록과 명령")
     uploaded_file=st.file_uploader("회의록 텍스트 파일 (.txt)",type=["txt"],key=f"meeting_file_{st.session_state.upload_version}")
     try:
@@ -43,6 +55,22 @@ with st.sidebar:
                     st.session_state.meeting_summary=analysis.get('summary','')
                     st.session_state.meeting_questions=analysis.get('questions',[])
                     st.session_state.meeting_analysis_hash=file_key
+                    # To-do는 사용자가 추천 목록에서 고르고, 날짜 확정 일정만 자동 등록합니다.
+                    added_dates=[]
+                    rejected=[]
+                    for event in analysis.get('schedules',[]):
+                        try:
+                            if add_schedule(event['title'],event['date'],event.get('time',''),event.get('assignee',''),event.get('parent','')):
+                                from datetime import date
+                                added_dates.append(date.fromisoformat(event['date']))
+                        except (ValueError,TypeError,KeyError):
+                            rejected.append(event.get('title','제목 없음'))
+                    if added_dates:
+                        first=min(added_dates)
+                        st.session_state.selected_date=first
+                        st.session_state.calendar_year=first.year
+                        st.session_state.calendar_month=first.month
+                    st.session_state.meeting_questions += [f'날짜 확인 필요: {name}' for name in rejected]
                     # 업로드한 회의록에 대한 요약 음성을 한 번만 생성합니다.
                     try:
                         st.session_state.summary_audio_bytes=text_to_speech(OpenAI(),st.session_state.meeting_summary)
@@ -52,7 +80,9 @@ with st.sidebar:
                         st.session_state.summary_audio_error=str(audio_exc)
                     st.session_state.summary_audio_hash=file_key
                     st.session_state.summary_autoplay_pending=True
-                    st.success('분석 완료! 가운데 추천 목록을 확인해 주세요.')
+                    st.success(f'분석 완료 · 일정 {len(added_dates)}건 자동 등록 · To-do는 추천 목록에서 선택하세요.')
+                    if rejected:
+                        st.warning(f'날짜를 확인할 수 없어 등록하지 않은 일정: {len(rejected)}건')
                 except Exception as exc:
                     st.error(f'회의록 분석 오류: {exc}')
 
@@ -66,7 +96,9 @@ with st.sidebar:
         st.rerun()
     # st.audio_input은 폼 밖에 두어 녹음 완료 후 확실히 갱신되게 합니다.
     text_query=st.text_input('텍스트 질문/명령',key='assistant_text_query')
-    audio_query=st.audio_input('음성으로 질문하기',key='assistant_voice_query')
+    audio_query=st.audio_input('음성으로 질문하기',key='assistant_voice_query',sample_rate=16000)
+    fallback_audio=st.file_uploader('녹음이 안 되면 오디오 파일로 질문하기',type=['wav','mp3','m4a','mp4','webm','ogg'],key='assistant_audio_upload',help='녹음 오류가 뜨면 휴대폰/Windows 녹음 파일을 올려 주세요.')
+    audio_query=audio_query if audio_query is not None else fallback_audio
     submitted=st.button('실행하기',use_container_width=True,key='assistant_submit')
 
 if submitted:
@@ -92,8 +124,13 @@ if submitted:
                 if result.audio_error:
                     st.warning(f'음성 응답 생성 오류: {result.audio_error}')
 
-st.title('🗓️ ABLE 일정 및 업무 관리')
-st.caption('회의록을 업로드하면 오른쪽에 요약, 가운데에 마감 일정 후보와 추천 To-do가 표시됩니다.')
+with st.container(key='able_hero'):
+    hero_image,hero_text=st.columns([1,4],vertical_alignment='center')
+    with hero_image:
+        st.image('able_mascot.webp',width=170)
+    with hero_text:
+        st.title('ABLE · 나만의 업무 비서')
+        st.caption('회의는 똑똑하게 정리하고, 오늘의 일정은 산뜻하게 관리해요. ☁️')
 
 # 왼쪽 사이드바 / 가운데 넓은 영역 / 오른쪽 좁은 영역
 main,right=st.columns([3.6,1.15],gap='large')
