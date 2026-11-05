@@ -17,6 +17,14 @@ def initialize_state() -> None:
         st.session_state.meeting_file_id = None
     if "audio_bytes" not in st.session_state:
         st.session_state.audio_bytes = None
+    if "summary_audio_bytes" not in st.session_state:
+        st.session_state.summary_audio_bytes = None
+    if "summary_audio_hash" not in st.session_state:
+        st.session_state.summary_audio_hash = None
+    if "summary_autoplay_pending" not in st.session_state:
+        st.session_state.summary_autoplay_pending = False
+    if "summary_audio_error" not in st.session_state:
+        st.session_state.summary_audio_error = None
     if "upload_version" not in st.session_state:
         st.session_state.upload_version = 0
     if "schedules" not in st.session_state:
@@ -48,6 +56,10 @@ def reset_state() -> None:
     st.session_state.meeting_content = ""
     st.session_state.meeting_file_id = None
     st.session_state.audio_bytes = None
+    st.session_state.summary_audio_bytes = None
+    st.session_state.summary_audio_hash = None
+    st.session_state.summary_autoplay_pending = False
+    st.session_state.summary_audio_error = None
     st.session_state.upload_version += 1
     st.session_state.schedules.clear()
     st.session_state.todos.clear()
