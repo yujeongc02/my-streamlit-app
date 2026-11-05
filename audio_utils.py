@@ -1,13 +1,21 @@
 # (출처: 6 - 미션 4. STT / 6 - 미션 5. TTS / 7 - 2. 음성 처리 로직)
 from openai import OpenAI
+from io import BytesIO
 
 def transcribe_audio(client: OpenAI, audio_file) -> str:
     """
     사용자의 음성 입력(audio_input 또는 오디오 파일)을 텍스트로 변환(STT)합니다.
     """
+    # Streamlit UploadedFile/AudioInput은 여러 번 읽을 수 있도록 바이트를 복사합니다.
+    data = audio_file.getvalue() if hasattr(audio_file, 'getvalue') else audio_file.read()
+    if not data:
+        raise ValueError('빈 녹음 파일입니다. 다시 녹음해 주세요.')
+    buffered = BytesIO(data)
+    buffered.name = 'recording.wav'
     transcript = client.audio.transcriptions.create(
         model="gpt-4o-mini-transcribe",
-        file=("audio.wav", audio_file, "audio/wav")
+        file=buffered,
+        language='ko',
     )
     return transcript.text
 
