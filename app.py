@@ -7,6 +7,7 @@ from openai import OpenAI
 
 from app_state import initialize_state, reset_state, save_response
 from assistant import ASSISTANT_BUILD, DEFAULT_SYS_ROLE
+from audio_utils import text_to_speech
 from calendar_ui_v2 import render_calendar, render_details, render_todos
 from command_service import MissingInputError, run_command
 from meeting_planner import analyze_meeting
@@ -42,6 +43,15 @@ with st.sidebar:
                     st.session_state.meeting_summary=analysis.get('summary','')
                     st.session_state.meeting_questions=analysis.get('questions',[])
                     st.session_state.meeting_analysis_hash=file_key
+                    # 업로드한 회의록에 대한 요약 음성을 한 번만 생성합니다.
+                    try:
+                        st.session_state.summary_audio_bytes=text_to_speech(OpenAI(),st.session_state.meeting_summary)
+                        st.session_state.summary_audio_error=None
+                    except Exception as audio_exc:
+                        st.session_state.summary_audio_bytes=None
+                        st.session_state.summary_audio_error=str(audio_exc)
+                    st.session_state.summary_audio_hash=file_key
+                    st.session_state.summary_autoplay_pending=True
                     st.success('분석 완료! 가운데 추천 목록을 확인해 주세요.')
                 except Exception as exc:
                     st.error(f'회의록 분석 오류: {exc}')
@@ -54,10 +64,10 @@ with st.sidebar:
         reset_state()
         st.session_state.meeting_analysis_hash=None
         st.rerun()
-    with st.form('command_form'):
-        text_query=st.text_input('텍스트 질문/명령')
-        audio_query=st.audio_input('음성으로 질문하기')
-        submitted=st.form_submit_button('실행하기',use_container_width=True)
+    # st.audio_input은 폼 밖에 두어 녹음 완료 후 확실히 갱신되게 합니다.
+    text_query=st.text_input('텍스트 질문/명령',key='assistant_text_query')
+    audio_query=st.audio_input('음성으로 질문하기',key='assistant_voice_query')
+    submitted=st.button('실행하기',use_container_width=True,key='assistant_submit')
 
 if submitted:
     if not text_query.strip() and audio_query is None:
@@ -72,6 +82,8 @@ if submitted:
                 st.error(f'명령 실행 오류: {exc}')
             else:
                 save_response(result.user_prompt,result.answer,result.audio_bytes)
+                if audio_query is not None:
+                    st.info(f'🎙️ 음성 인식 결과: {result.user_prompt}')
                 if result.email_status:
                     if result.email_status.startswith('이메일 발송 완료'):
                         st.success(result.email_status)
@@ -93,6 +105,11 @@ with right:
     st.subheader('📋 회의 요약')
     if st.session_state.meeting_summary:
         st.write(st.session_state.meeting_summary)
+        if st.session_state.summary_audio_bytes:
+            st.audio(st.session_state.summary_audio_bytes,format='audio/mp3',autoplay=st.session_state.summary_autoplay_pending)
+            st.session_state.summary_autoplay_pending=False
+        elif st.session_state.summary_audio_error:
+            st.caption('음성 요약을 생성하지 못했습니다. 텍스트 요약은 정상 표시됩니다.')
     else:
         st.info('회의록을 업로드하면 요약이 바로 나타납니다.')
     st.divider()
@@ -103,7 +120,10 @@ st.subheader('💬 에이블의 답변')
 if st.session_state.audio_bytes:
     st.audio(st.session_state.audio_bytes,format='audio/mp3')
 if st.session_state.messages:
-    for message in st.session_state.messages:
+    # 최신 질문과 답변 한 묶음이 맨 위로 오게 표시 순서만 뒤집습니다.
+    turns=[st.session_state.messages[i:i+2] for i in range(0,len(st.session_state.messages),2)]
+    for turn in reversed(turns):
+      for message in turn:
         with st.chat_message(message['role']):
             st.write(message['content'])
 else:
