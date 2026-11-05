@@ -1,6 +1,7 @@
 # (출처: 6 - 미션 4. STT / 6 - 미션 5. TTS / 7 - 2. 음성 처리 로직)
 from openai import OpenAI
 from io import BytesIO
+from pathlib import Path
 
 def transcribe_audio(client: OpenAI, audio_file) -> str:
     """
@@ -11,7 +12,9 @@ def transcribe_audio(client: OpenAI, audio_file) -> str:
     if not data:
         raise ValueError('빈 녹음 파일입니다. 다시 녹음해 주세요.')
     buffered = BytesIO(data)
-    buffered.name = 'recording.wav'
+    filename = getattr(audio_file, 'name', '') or 'recording.wav'
+    extension = Path(filename).suffix.lower()
+    buffered.name = filename if extension in {'.wav','.mp3','.m4a','.mp4','.webm','.ogg','.oga','.flac','.mpeg','.mpga'} else 'recording.wav'
     transcript = client.audio.transcriptions.create(
         model="gpt-4o-mini-transcribe",
         file=buffered,
