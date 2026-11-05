@@ -1,19 +1,36 @@
 """Compact calendar with event labels, manual registration, recommendations and PNG."""
 import calendar
+import hashlib
+import html
 import io
-import os
 from datetime import date, time
 
 import streamlit as st
 from PIL import Image, ImageDraw, ImageFont
+from pathlib import Path
+from audio_utils import transcribe_audio
 from meeting_planner import add_schedule, add_todo
 
 
+PASTEL_COLORS = [
+    ('#e6f2ff', '#285a85'),  # 파랑
+    ('#f5e8f6', '#7a467e'),  # 보라
+    ('#fff2d6', '#88651b'),  # 노랑
+    ('#e4f4e7', '#397149'),  # 초록
+    ('#ffe8e7', '#995352'),  # 분홍
+]
+
+
+def _event_color(title):
+    index = int(hashlib.sha256(title.encode('utf-8')).hexdigest()[:6], 16) % len(PASTEL_COLORS)
+    return PASTEL_COLORS[index]
+
+
 def _font(size):
-    for name in ("/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc", "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc", "/usr/share/fonts/truetype/nanum/NanumGothic.ttf", "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"):
-        if os.path.exists(name):
+    for name in ("/usr/share/fonts/truetype/nanum/NanumGothic.ttf", "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc", "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc"):
+        if Path(name).is_file():
             return ImageFont.truetype(name, size)
-    return ImageFont.load_default()
+    raise RuntimeError('한글 PNG 글꼴이 없습니다. packages.txt의 fonts-nanum 설치를 확인해 주세요.')
 
 
 def _png(lines, title):
@@ -43,7 +60,11 @@ def calendar_png(year, month, events):
                 d.text((x+8,y+5),str(day),font=_font(18),fill='#0f172a')
                 matches=[e for e in events if e['date']==day_string]
                 for k,e in enumerate(matches[:3]):
-                    d.text((x+8,y+32+k*27),(e.get('time','')+' '+e['schedule']).strip()[:12],font=_font(14),fill='#2563eb')
+                    line=(e.get('time','')+' '+e['schedule']).strip()
+                    bg,fg=_event_color(e['schedule'])
+                    top=y+33+k*28
+                    d.rounded_rectangle((x+5,top,x+154,top+24),radius=4,fill=bg)
+                    d.text((x+10,top+2),line[:11],font=_font(13),fill=fg)
     out=io.BytesIO()
     img.save(out,format='PNG')
     return out.getvalue()
@@ -76,22 +97,48 @@ def render_calendar():
         st.rerun()
     d.download_button('📥 달력 PNG',calendar_png(year,month,st.session_state.schedules),file_name='calendar.png',mime='image/png')
 
-    for col,wd in zip(st.columns(7),['월','화','수','목','금','토','일']):
-        col.markdown(f'**{wd}**')
-    for week in calendar.monthcalendar(year,month):
-        for col,day in zip(st.columns(7,gap='small'),week):
-            if not day:
-                col.write(' ')
-                continue
-            current=date(year,month,day)
-            matches=[e for e in st.session_state.schedules if e['date']==current.isoformat()]
-            with col:
-                if st.button(str(day),key=f'date_{current}',use_container_width=True):
-                    st.session_state.selected_date=current
-                    st.rerun()
-                for item in matches[:3]:
-                    st.caption('📌 '+(item.get('time','')+' '+item['schedule']).strip())
-                if len(matches)>3:st.caption(f'외 {len(matches)-3}개')
+    # 날짜 버튼은 숫자만 보이고, 그 아래 일정은 부드러운 배경의 띠로 표시합니다.
+    st.markdown('''<style>
+      .st-key-able_calendar_grid .stButton > button {
+          border: 0 !important; border-radius: 0 !important;
+          box-shadow: none !important; background: transparent !important;
+          padding: .12rem .35rem !important; min-height: 1.7rem !important;
+          font-weight: 650; text-align: left; justify-content: flex-start;
+      }
+      .st-key-able_calendar_grid .stButton > button:hover {
+          color: #2563eb !important; background: #f4f7fb !important;
+      }
+      .able-calendar-cell { min-height: 78px; padding: 1px 2px 6px; }
+      .able-calendar-band {
+          border-radius: 3px; margin: 3px 0; padding: 3px 5px;
+          white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+          font-size: .70rem; line-height: 1.2; box-sizing: border-box;
+      }
+      .able-calendar-extra {font-size:.68rem;color:#64748b;}
+    </style>''',unsafe_allow_html=True)
+
+    with st.container(key='able_calendar_grid'):
+        for col,wd in zip(st.columns(7,gap='small'),['월','화','수','목','금','토','일']):
+            col.markdown(f'**{wd}**')
+        for week in calendar.monthcalendar(year,month):
+            for col,day in zip(st.columns(7,gap='small'),week):
+                with col:
+                    if not day:
+                        st.markdown('<div class="able-calendar-cell"></div>',unsafe_allow_html=True)
+                        continue
+                    current=date(year,month,day)
+                    matches=[e for e in st.session_state.schedules if e['date']==current.isoformat()]
+                    if st.button(str(day),key=f'date_{current}',use_container_width=True):
+                        st.session_state.selected_date=current
+                        st.rerun()
+                    bands=[]
+                    for item in matches[:3]:
+                        label=html.escape((item.get('time','')+' '+item['schedule']).strip(),quote=True)
+                        bg,fg=_event_color(item['schedule'])
+                        bands.append(f'<div class="able-calendar-band" style="background:{bg};color:{fg}" title="{label}">{label}</div>')
+                    if len(matches)>3:
+                        bands.append(f'<div class="able-calendar-extra">외 {len(matches)-3}개</div>')
+                    st.markdown('<div class="able-calendar-cell">'+''.join(bands)+'</div>',unsafe_allow_html=True)
 
 
 def render_details():
@@ -132,13 +179,8 @@ def render_details():
             if b.button('추가',key=f'add_rec_{i}'):
                 add_todo(item['title'],item['assignee'],item['parent'])
                 st.rerun()
-        st.divider()
-        st.subheader('📄 회의록 분석 결과')
-        if not analysis:
-            st.info('회의록을 올리면 분석 결과가 여기에 표시됩니다.')
-        else:
-            st.write(analysis.get('summary',''))
-            st.markdown('**캘린더 등록 후보**')
+        if analysis:
+            st.markdown('**회의록에서 추출한 일정 후보**')
             for i,item in enumerate(analysis.get('schedules',[])):
                 a,b=st.columns([5,1])
                 a.write(f"{item['date']} · {item['title']}")
@@ -162,14 +204,34 @@ def render_todos():
         try:
             if add_todo(title):st.rerun()
         except ValueError as exc:st.warning(str(exc))
+    st.caption('음성으로 할 일 추가')
+    voice = st.audio_input('할 일을 말해 주세요',key='todo_voice_input')
+    if st.button('🎙️ 녹음한 할 일 추가',key='todo_voice_add',use_container_width=True):
+        if voice is None:
+            st.warning('먼저 마이크로 할 일을 녹음해 주세요.')
+        else:
+            from openai import OpenAI
+            try:
+                spoken = transcribe_audio(OpenAI(),voice).strip()
+                # 명령형 표현을 제거하되, 사용자가 말한 할 일은 그대로 보존합니다.
+                import re
+                task = re.sub(r'^에이블[, ]*', '', spoken).strip()
+                task = re.sub(r'(투두리스트에|할 일로|할 일에)\s*', '', task)
+                task = re.sub(r'\s*(추가해\s*줘|추가해줘|등록해\s*줘|등록해줘)[.!?]?$','',task).strip()
+                if not task:
+                    st.warning('할 일 내용을 인식하지 못했습니다.')
+                elif add_todo(task):
+                    st.success(f'음성 인식: {spoken} → 추가 완료')
+                    st.rerun()
+                else:
+                    st.info('이미 추가된 할 일입니다.')
+            except Exception as exc:
+                st.error(f'음성 할 일 추가 실패: {exc}')
     total=len(st.session_state.todos)
-    done=sum(x['done'] for x in st.session_state.todos)
-    st.caption(f'완료 {done}/{total}')
-    if total:st.progress(done/total)
     for item in list(st.session_state.todos):
         a,b=st.columns([5,1])
         item['done']=a.checkbox(item['task'],value=item['done'],key=f'todo_{item["id"]}')
-        if b.button('❌',key=f'del_todo_{item["id"]}'):
+        if b.button('삭제',key=f'del_todo_{item["id"]}'):
             st.session_state.todos.remove(item)
             st.rerun()
     lines=[('[완료]' if x['done'] else '[미완료]')+' '+x['task'] for x in st.session_state.todos]
